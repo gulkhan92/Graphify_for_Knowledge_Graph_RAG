@@ -1,0 +1,14 @@
+.DS_Store
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+node_modules/
+coverage/
+artifacts/
+frontend/dist/
+frontend/node_modules/
