@@ -6,6 +6,7 @@ from pathlib import Path
 from graphify_rag.chunking import chunk_document
 from graphify_rag.config import PipelineConfig
 from graphify_rag.extraction import extract_entities, extract_relations
+from graphify_rag.graphify_adapter import GraphifyAdapter, GraphifyError
 from graphify_rag.graph_store import GraphStore
 from graphify_rag.logging_utils import get_logger
 from graphify_rag.models import AnswerPayload, GraphSnapshot
@@ -25,6 +26,7 @@ class GraphRagService:
         self.config = config
         self.graph_store = GraphStore(config.artifacts_dir)
         self.vector_store = VectorStore(config.artifacts_dir)
+        self.graphify_adapter = GraphifyAdapter(config.input_dir, config.artifacts_dir)
         self.snapshot: GraphSnapshot | None = None
         self.retriever: HybridRetriever | None = None
         self.embeddings: dict[str, list[float]] = {}
@@ -32,6 +34,25 @@ class GraphRagService:
 
     def ingest(self) -> GraphSnapshot:
         LOGGER.info("Starting ingestion from %s", self.config.input_dir)
+        if self.config.prefer_graphify:
+            try:
+                snapshot = self.graphify_adapter.build_snapshot()
+                LOGGER.info("Using Graphify-generated graph snapshot.")
+                self.graph_store.save(snapshot)
+                self.embeddings = self._build_embeddings(snapshot.chunks)
+                if self.embeddings:
+                    self.vector_store.save(self.embeddings)
+                self.snapshot = snapshot
+                self.retriever = HybridRetriever(
+                    snapshot.chunks,
+                    snapshot.entities,
+                    snapshot.relations,
+                    embeddings=self.embeddings,
+                )
+                return snapshot
+            except GraphifyError as exc:
+                LOGGER.warning("Graphify unavailable or failed, falling back to local extractor: %s", exc)
+
         documents = load_documents(self.config.input_dir)
         validate_documents(documents)
         chunks = [
@@ -86,11 +107,20 @@ class GraphRagService:
     def corpus_summary(self) -> dict[str, object]:
         self.ensure_loaded()
         assert self.snapshot is not None
+        graph_provider = next(
+            (
+                document.metadata.get("source_type")
+                for document in self.snapshot.documents
+                if document.metadata.get("source_type")
+            ),
+            "local",
+        )
         return {
             "documents": len(self.snapshot.documents),
             "chunks": len(self.snapshot.chunks),
             "entities": len(self.snapshot.entities),
             "relations": len(self.snapshot.relations),
+            "graph_provider": graph_provider,
             "top_entities": [asdict(entity) for entity in self.snapshot.entities[:10]],
         }
 

@@ -12,6 +12,7 @@ export type SummaryResponse = {
   chunks: number;
   entities: number;
   relations: number;
+  graph_provider?: string;
   top_entities: Entity[];
 };
 

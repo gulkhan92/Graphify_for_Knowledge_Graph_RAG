@@ -34,6 +34,28 @@ class ServiceTests(unittest.TestCase):
             self.assertIn("Grounded answer draft", answer.answer)
             self.assertEqual(answer.llm_provider, "deterministic")
 
+    @patch("graphify_rag.service.GraphifyAdapter")
+    def test_ingest_prefers_graphify_when_available(self, mock_graphify_adapter) -> None:
+        from graphify_rag.models import Chunk, Document, Entity, GraphSnapshot, Relation
+
+        mock_adapter_instance = mock_graphify_adapter.return_value
+        mock_adapter_instance.build_snapshot.return_value = GraphSnapshot(
+            documents=[Document("doc-1", "Graphify Doc", Path("doc.pdf"), "graphify text", metadata={"source_type": "graphify"})],
+            chunks=[Chunk("c1", "doc-1", "graphify text", 0, 2)],
+            entities=[Entity("e1", "FinRL-X", "Concept", chunk_ids=["c1"])],
+            relations=[Relation("e1", "e1", "related_to", 1.0, [])],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = PipelineConfig(input_dir=Path(tmp_dir), artifacts_dir=Path(tmp_dir) / "artifacts")
+            Path(tmp_dir).mkdir(parents=True, exist_ok=True)
+            service = GraphRagService(config)
+
+            snapshot = service.ingest()
+
+            self.assertEqual(snapshot.documents[0].metadata["source_type"], "graphify")
+            mock_adapter_instance.build_snapshot.assert_called_once()
+
     @patch("graphify_rag.service.load_documents")
     def test_answer_uses_openai_client_when_configured(self, mock_load_documents) -> None:
         from graphify_rag.models import Document
