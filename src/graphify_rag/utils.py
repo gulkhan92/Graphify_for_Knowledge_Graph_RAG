@@ -40,6 +40,22 @@ def cosine_similarity(left: Counter[str], right: Counter[str]) -> float:
     return numerator / (left_norm * right_norm)
 
 
+def dot_product(left: list[float], right: list[float]) -> float:
+    return sum(lval * rval for lval, rval in zip(left, right))
+
+
+def vector_norm(vector: list[float]) -> float:
+    return math.sqrt(sum(value * value for value in vector))
+
+
+def cosine_similarity_dense(left: list[float], right: list[float]) -> float:
+    left_norm = vector_norm(left)
+    right_norm = vector_norm(right)
+    if not left_norm or not right_norm:
+        return 0.0
+    return dot_product(left, right) / (left_norm * right_norm)
+
+
 def write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

@@ -59,6 +59,9 @@ class GraphSnapshot:
 class RetrievalResult:
     chunk: Chunk
     score: float
+    lexical_score: float = 0.0
+    dense_score: float = 0.0
+    graph_score: float = 0.0
 
 
 @dataclass(slots=True)
@@ -67,3 +70,12 @@ class AnswerPayload:
     question: str
     evidence: list[dict[str, Any]]
     graph_context: list[dict[str, Any]]
+    retrieval_mode: str = "lexical_graph"
+    llm_provider: str = "deterministic"
+    llm_model: str | None = None
+
+
+@dataclass(slots=True)
+class ChatTurn:
+    role: str
+    content: str

@@ -18,10 +18,16 @@ export type SummaryResponse = {
 export type AskResponse = {
   answer: string;
   question: string;
+  retrieval_mode: string;
+  llm_provider: string;
+  llm_model: string | null;
   evidence: Array<{
     chunk_id: string;
     doc_id: string;
     score: number;
+    lexical_score: number;
+    dense_score: number;
+    graph_score: number;
     text: string;
   }>;
   graph_context: Array<{

@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     ask_parser = subparsers.add_parser("ask", help="Ask a question against the stored graph", parents=[shared])
     ask_parser.add_argument("question")
+    ask_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
 
     subparsers.add_parser("summary", help="Print corpus summary", parents=[shared])
     return parser
@@ -51,7 +52,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ask":
         payload = service.answer(args.question)
-        print(json.dumps(asdict(payload), indent=2))
+        if args.json:
+            print(json.dumps(asdict(payload), indent=2))
+        else:
+            print(payload.answer)
+            print()
+            print(json.dumps({"retrieval_mode": payload.retrieval_mode, "llm_provider": payload.llm_provider, "llm_model": payload.llm_model}, indent=2))
         return 0
 
     parser.error(f"Unsupported command: {args.command}")

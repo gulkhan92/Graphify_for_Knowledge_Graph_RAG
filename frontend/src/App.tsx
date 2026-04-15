@@ -123,6 +123,11 @@ export function App() {
             {answer && (
               <div className="answer-block">
                 <h3>Answer</h3>
+                <div className="answer-meta">
+                  <span>{answer.retrieval_mode}</span>
+                  <span>{answer.llm_provider}</span>
+                  <span>{answer.llm_model ?? "fallback synthesis"}</span>
+                </div>
                 <p>{answer.answer}</p>
                 <div className="evidence-grid">
                   <div>
@@ -132,6 +137,11 @@ export function App() {
                         <div className="evidence-meta">
                           <span>{item.doc_id}</span>
                           <span>{item.score.toFixed(3)}</span>
+                        </div>
+                        <div className="score-row">
+                          <span>lexical {item.lexical_score.toFixed(3)}</span>
+                          <span>dense {item.dense_score.toFixed(3)}</span>
+                          <span>graph {item.graph_score.toFixed(3)}</span>
                         </div>
                         <p>{item.text}</p>
                       </article>
