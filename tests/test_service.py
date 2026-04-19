@@ -76,11 +76,15 @@ class ServiceTests(unittest.TestCase):
                 openai_api_key="test-key",
                 use_openai_generation=True,
                 use_openai_embeddings=False,
+                use_openai_guardrails=True,
             )
             config.input_dir.mkdir(parents=True, exist_ok=True)
             service = GraphRagService(config)
             service.openai_client = Mock()
-            service.openai_client.chat_completion.return_value = "OpenAI grounded answer."
+            service.openai_client.chat_completion.side_effect = [
+                "OpenAI grounded answer.",
+                '{"verdict":"PASS","issues":[],"revised_requirements":[]}',
+            ]
 
             service.ingest()
             answer = service.answer("What does FinRL-X integrate?")
@@ -88,7 +92,49 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(answer.answer, "OpenAI grounded answer.")
             self.assertEqual(answer.llm_provider, "openai")
             self.assertEqual(answer.llm_model, config.openai_chat_model)
-            service.openai_client.chat_completion.assert_called_once()
+            self.assertEqual(answer.guardrail_status, "passed")
+            self.assertEqual(service.openai_client.chat_completion.call_count, 2)
+
+    @patch("graphify_rag.service.load_documents")
+    def test_guardrail_can_trigger_regeneration(self, mock_load_documents) -> None:
+        from graphify_rag.models import Document
+
+        mock_load_documents.return_value = [
+            Document(
+                doc_id="doc-1",
+                title="FinRL-X",
+                path=Path("doc.pdf"),
+                content="FinRL-X integrates LLM signals for modular trading workflows.",
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = PipelineConfig(
+                input_dir=Path(tmp_dir),
+                artifacts_dir=Path(tmp_dir) / "artifacts",
+                openai_api_key="test-key",
+                use_openai_generation=True,
+                use_openai_embeddings=False,
+                use_openai_guardrails=True,
+                max_guardrail_loops=1,
+            )
+            config.input_dir.mkdir(parents=True, exist_ok=True)
+            service = GraphRagService(config)
+            service.openai_client = Mock()
+            service.openai_client.chat_completion.side_effect = [
+                "Initial answer with unsupported claim.",
+                '{"verdict":"FAIL","issues":["Unsupported claim detected."],"revised_requirements":["Remove unsupported claim and answer only from evidence."]}',
+                "Revised grounded answer.",
+                '{"verdict":"PASS","issues":[],"revised_requirements":[]}',
+            ]
+
+            service.ingest()
+            answer = service.answer("What does FinRL-X integrate?")
+
+            self.assertEqual(answer.answer, "Revised grounded answer.")
+            self.assertEqual(answer.guardrail_status, "passed_after_retry")
+            self.assertIn("Unsupported claim detected.", answer.guardrail_feedback)
+            self.assertEqual(service.openai_client.chat_completion.call_count, 4)
 
 
 if __name__ == "__main__":

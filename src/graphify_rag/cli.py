@@ -57,7 +57,18 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(payload.answer)
             print()
-            print(json.dumps({"retrieval_mode": payload.retrieval_mode, "llm_provider": payload.llm_provider, "llm_model": payload.llm_model}, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "retrieval_mode": payload.retrieval_mode,
+                        "llm_provider": payload.llm_provider,
+                        "llm_model": payload.llm_model,
+                        "guardrail_status": payload.guardrail_status,
+                        "guardrail_feedback": payload.guardrail_feedback,
+                    },
+                    indent=2,
+                )
+            )
         return 0
 
     parser.error(f"Unsupported command: {args.command}")

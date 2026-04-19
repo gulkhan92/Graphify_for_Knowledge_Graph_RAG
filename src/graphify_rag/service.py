@@ -12,7 +12,14 @@ from graphify_rag.logging_utils import get_logger
 from graphify_rag.models import AnswerPayload, GraphSnapshot
 from graphify_rag.openai_client import OpenAIAPIError, OpenAIClient
 from graphify_rag.pdf import load_documents
-from graphify_rag.prompts import SYSTEM_PROMPT, build_chat_turn
+from graphify_rag.prompts import (
+    GUARDRAIL_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    build_chat_turn,
+    build_guardrail_turn,
+    build_regeneration_turn,
+    parse_guardrail_payload,
+)
 from graphify_rag.retrieval import HybridRetriever
 from graphify_rag.validation import validate_chunks, validate_documents, validate_entities
 from graphify_rag.vector_store import VectorStore
@@ -156,8 +163,14 @@ class GraphRagService:
             retrieval_mode = "empty"
             llm_provider = "deterministic"
             llm_model = None
+            guardrail_status = "not_run"
+            guardrail_feedback: list[str] = []
         else:
-            answer, llm_provider, llm_model = self._generate_answer(question, evidence, graph_context)
+            answer, llm_provider, llm_model, guardrail_status, guardrail_feedback = self._generate_answer(
+                question,
+                evidence,
+                graph_context,
+            )
             retrieval_mode = "hybrid_dense_graph" if query_embedding is not None else "hybrid_lexical_graph"
 
         return AnswerPayload(
@@ -168,6 +181,8 @@ class GraphRagService:
             retrieval_mode=retrieval_mode,
             llm_provider=llm_provider,
             llm_model=llm_model,
+            guardrail_status=guardrail_status,
+            guardrail_feedback=guardrail_feedback,
         )
 
     def validate_paths(self) -> None:
@@ -202,18 +217,74 @@ class GraphRagService:
         question: str,
         evidence: list[dict[str, object]],
         graph_context: list[dict[str, object]],
-    ) -> tuple[str, str, str | None]:
+    ) -> tuple[str, str, str | None, str, list[str]]:
         if self.openai_client and self.config.use_openai_generation:
             try:
-                response = self.openai_client.chat_completion(
-                    model=self.config.openai_chat_model,
-                    system_prompt=SYSTEM_PROMPT,
-                    messages=[build_chat_turn(question, evidence, graph_context)],
+                response = self._generate_with_guardrails(question, evidence, graph_context)
+                return (
+                    response["answer"],
+                    "openai",
+                    self.config.openai_chat_model,
+                    response["guardrail_status"],
+                    response["guardrail_feedback"],
                 )
-                return response, "openai", self.config.openai_chat_model
             except OpenAIAPIError as exc:
                 LOGGER.warning("OpenAI answer generation failed; falling back to deterministic synthesis: %s", exc)
 
         supporting = " ".join(str(item["text"]) for item in evidence[:2])
         answer = f"Grounded answer draft: {supporting[:900].strip()}"
-        return answer, "deterministic", None
+        return answer, "deterministic", None, "not_run", []
+
+    def _generate_with_guardrails(
+        self,
+        question: str,
+        evidence: list[dict[str, object]],
+        graph_context: list[dict[str, object]],
+    ) -> dict[str, object]:
+        assert self.openai_client is not None
+        answer = self.openai_client.chat_completion(
+            model=self.config.openai_chat_model,
+            system_prompt=SYSTEM_PROMPT,
+            messages=[build_chat_turn(question, evidence, graph_context)],
+        )
+        if not self.config.use_openai_guardrails:
+            return {"answer": answer, "guardrail_status": "skipped", "guardrail_feedback": []}
+
+        guardrail_feedback: list[str] = []
+        for attempt in range(self.config.max_guardrail_loops + 1):
+            verdict = self._validate_answer(question, evidence, graph_context, answer)
+            if verdict["verdict"] == "PASS":
+                status = "passed" if attempt == 0 else "passed_after_retry"
+                return {"answer": answer, "guardrail_status": status, "guardrail_feedback": guardrail_feedback}
+            guardrail_feedback = [*verdict["issues"], *verdict["revised_requirements"]]
+            if attempt >= self.config.max_guardrail_loops:
+                return {"answer": answer, "guardrail_status": "failed", "guardrail_feedback": guardrail_feedback}
+            answer = self.openai_client.chat_completion(
+                model=self.config.openai_chat_model,
+                system_prompt=SYSTEM_PROMPT,
+                messages=[build_regeneration_turn(question, evidence, graph_context, guardrail_feedback)],
+            )
+        return {"answer": answer, "guardrail_status": "failed", "guardrail_feedback": guardrail_feedback}
+
+    def _validate_answer(
+        self,
+        question: str,
+        evidence: list[dict[str, object]],
+        graph_context: list[dict[str, object]],
+        candidate_answer: str,
+    ) -> dict[str, object]:
+        assert self.openai_client is not None
+        response = self.openai_client.chat_completion(
+            model=self.config.openai_guardrail_model,
+            system_prompt=GUARDRAIL_SYSTEM_PROMPT,
+            messages=[build_guardrail_turn(question, evidence, graph_context, candidate_answer)],
+        )
+        try:
+            return parse_guardrail_payload(response)
+        except Exception as exc:
+            LOGGER.warning("Guardrail validation payload could not be parsed: %s", exc)
+            return {
+                "verdict": "FAIL",
+                "issues": ["Validator returned an unreadable response."],
+                "revised_requirements": ["Regenerate the answer strictly from the cited evidence."],
+            }

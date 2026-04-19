@@ -73,6 +73,8 @@ class AnswerPayload:
     retrieval_mode: str = "lexical_graph"
     llm_provider: str = "deterministic"
     llm_model: str | None = None
+    guardrail_status: str = "not_run"
+    guardrail_feedback: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
