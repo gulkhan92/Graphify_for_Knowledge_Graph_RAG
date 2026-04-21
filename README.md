@@ -165,3 +165,18 @@ docker compose up --build
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
+
+## Test Strategy
+The test suite is designed around the most failure-prone areas of a Graphify + hybrid-RAG system:
+- ingestion correctness (Graphify path and deterministic fallback path)
+- retrieval correctness (lexical/cosine, KG traversal, and hybrid ranking behavior)
+- generation orchestration (context packaging and retry behavior)
+- guardrail control flow (pass/fail conditions and bounded retry loop)
+- service/API behavior (ingest lifecycle, ask/chat endpoints, summary and metrics consistency)
+
+Testing is intentionally layered:
+- unit tests for retrieval, graph parsing, extraction, and scoring logic
+- service tests for end-to-end ingest + answer flow with deterministic assertions
+- API tests for request/response contracts and runtime health behavior
+
+This approach keeps algorithmic regressions and integration regressions visible separately.
