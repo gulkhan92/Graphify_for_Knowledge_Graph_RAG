@@ -180,3 +180,15 @@ Testing is intentionally layered:
 - API tests for request/response contracts and runtime health behavior
 
 This approach keeps algorithmic regressions and integration regressions visible separately.
+
+## Test Case Matrix
+| Area | Representative test cases | Expected assertion |
+|---|---|---|
+| Graphify ingestion | Graphify export parsing, manifest persistence, provider metadata | Parsed graph objects are valid and provider is correctly reported |
+| Fallback ingestion | PDF text extraction + chunking when Graphify unavailable | Ingestion still completes with deterministic artifacts |
+| Entity/relation extraction | Acronym/title-case entity handling, co-occurrence relation labels | Stable entity set and relation edges for known fixtures |
+| Hybrid retrieval | Lexical-only, KG-only, and blended ranking scenarios | Top-ranked chunks match expected relevance ordering |
+| Guardrail loop | First-pass fail then retry pass, max retry cap reached | Retry count and final status conform to config |
+| Generation grounding | Evidence/context assembly and answer synthesis behavior | Returned answer references retrieved context path |
+| API contracts | `/health`, `/metrics`, `/api/summary`, `/api/ingest`, `/api/ask`, `/api/chat` | Valid status codes and schema-conformant payloads |
+| Monitoring | Ingest count, question count, latency metrics evolution | Metrics change predictably with requests |
