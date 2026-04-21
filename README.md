@@ -192,3 +192,27 @@ This approach keeps algorithmic regressions and integration regressions visible 
 | Generation grounding | Evidence/context assembly and answer synthesis behavior | Returned answer references retrieved context path |
 | API contracts | `/health`, `/metrics`, `/api/summary`, `/api/ingest`, `/api/ask`, `/api/chat` | Valid status codes and schema-conformant payloads |
 | Monitoring | Ingest count, question count, latency metrics evolution | Metrics change predictably with requests |
+
+## Adding New Test Cases
+When adding new features, include tests at the narrowest level first, then one integration-level assertion:
+1. Add/extend unit tests for core logic changes (scoring, extraction, guardrails, parsing).
+2. Add service-level test for flow impact (ingest/retrieve/generate orchestration).
+3. Add API-level test only if request/response contract changes.
+
+Recommended test authoring rules:
+- use deterministic fixtures and avoid network dependency in default tests
+- assert ranking/order for retrieval logic, not just non-empty outputs
+- assert guardrail decision + retry count for loop behavior
+- keep each test focused on one behavioral contract
+
+## Debugging Failed Tests
+Typical failure triage sequence:
+1. Run full suite:
+   `PYTHONPATH=src python3 -m unittest discover -s tests -v`
+2. Run a single failing module:
+   `PYTHONPATH=src python3 -m unittest tests.test_service -v`
+3. Inspect generated artifacts in `artifacts/` and compare expected graph/chunk state.
+4. Re-run with Graphify disabled to isolate fallback-path regressions:
+   `PREFER_GRAPHIFY=false ...`
+
+This keeps regressions actionable and prevents retrieval/guardrail quality drift over time.
